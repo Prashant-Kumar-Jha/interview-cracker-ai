@@ -12,64 +12,22 @@ header{height:60px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;
 .status{padding:6px 12px;border-radius:20px;font-size:13px;font-weight:500}
 .connected{background:#dcfce7;color:#166534}
 .disconnected{background:#fee2e2;color:#991b1b}
-
-.layout{
- display:grid;
- grid-template-columns:300px 1fr 360px;
- gap:16px;
- padding:16px;
- height:calc(100vh - 60px)
-}
-
-.panel{
- background:#fff;
- border-radius:10px;
- box-shadow:0 8px 20px rgba(0,0,0,.05);
- display:flex;
- flex-direction:column
-}
-
+.layout{display:grid;grid-template-columns:300px 1fr 360px;gap:16px;padding:16px;height:calc(100vh - 60px)}
+.panel{background:#fff;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.05);display:flex;flex-direction:column}
 .panel-header{padding:10px 14px;font-weight:600;color:#fff}
 .green{background:#10b981}
 .blue{background:#0ea5e9}
 .purple{background:#8b5cf6}
 .orange{background:#f97316}
-
 .panel-body{padding:14px;flex:1;overflow:auto;font-size:14px}
-
-button{
- width:100%;
- padding:10px;
- margin-top:8px;
- border:none;
- border-radius:6px;
- color:#fff;
- cursor:pointer
-}
-
+button{width:100%;padding:10px;margin-top:8px;border:none;border-radius:6px;color:#fff;cursor:pointer}
 .btn-green{background:#22c55e}
 .btn-red{background:#ef4444}
 .btn-blue{background:#3b82f6}
 .btn-gray{background:#64748b}
-
-textarea,input{
- width:100%;
- padding:10px;
- border-radius:6px;
- border:1px solid #cbd5f5
-}
-
+textarea,input{width:100%;padding:10px;border-radius:6px;border:1px solid #cbd5f5}
 video{width:100%;border-radius:8px;border:1px solid #cbd5f5}
-
-.msg{
- background:#eef2ff;
- padding:14px;
- border-radius:10px;
- margin-bottom:12px;
- font-size:15px;
- line-height:1.6
-}
-
+.msg{background:#eef2ff;padding:14px;border-radius:10px;margin-bottom:12px;font-size:15px;line-height:1.6}
 .msg b{display:block;margin-bottom:6px;color:#1e3a8a}
 small{color:#64748b}
 </style>
@@ -87,7 +45,6 @@ small{color:#64748b}
 
 <div class="layout">
 
-<!-- LEFT -->
 <div class="panel">
   <div class="panel-header orange">👤 Candidate Profile</div>
   <div class="panel-body">
@@ -101,7 +58,7 @@ small{color:#64748b}
     <hr>
 
     <div class="panel-header green">📄 Resume Scan</div>
-    <textarea id="resumeText" placeholder="Paste full resume here..." style="height:160px">{{ resume_text or '' }}</textarea>
+    <textarea id="resumeText" style="height:160px">{{ resume_text or '' }}</textarea>
     <button class="btn-green" onclick="saveResume()">Analyze Resume</button>
     <small id="resumeStatus">No resume loaded</small>
 
@@ -121,7 +78,6 @@ small{color:#64748b}
   </div>
 </div>
 
-<!-- CENTER -->
 <div class="panel">
   <div class="panel-header blue">🖥 Meeting Screen</div>
   <div class="panel-body">
@@ -129,14 +85,12 @@ small{color:#64748b}
   </div>
 </div>
 
-<!-- RIGHT -->
 <div class="panel">
   <div class="panel-header purple">💬 AI Answers</div>
   <div class="panel-body" id="conversation">
     <div class="msg"><b>System</b>Configure Groq API to start</div>
   </div>
-
-  <textarea id="manualQuestion" placeholder="Ask Groq directly..." style="margin-top:10px"></textarea>
+  <textarea id="manualQuestion" style="margin-top:10px"></textarea>
   <button class="btn-blue" onclick="askDirect()">Ask Groq</button>
   <button class="btn-gray" onclick="clearConversation()">Clear Answers</button>
 </div>
@@ -144,240 +98,193 @@ small{color:#64748b}
 </div>
 
 <script>
-function logout(){
-  window.location.href="/";
+function logout(){ window.location.href="/"; }
+
+let recognition=null;
+let screenStream=null;
+let GROQ_API_KEY="";
+let resumeContext="";
+let aiBusy=false;
+let isListening=false;
+let listenTimer=null;
+
+const apiStatus=document.getElementById("apiStatus");
+const listenBtn=document.getElementById("listenBtn");
+const convo=document.getElementById("conversation");
+const voiceStatus=document.getElementById("voiceStatus");
+const keyInfo=document.getElementById("keyInfo");
+
+function setConnected(){
+  apiStatus.innerText="● Groq Connected";
+  apiStatus.className="status connected";
+  listenBtn.disabled=false;
+  keyInfo.innerText="Saved key: "+GROQ_API_KEY.slice(0,6)+"••••";
 }
 
-let recognition;
-let screenStream;
-let GROQ_API_KEY = document.getElementById("apiKeyInput").value.trim();
-let resumeContext = document.getElementById("resumeText").value.trim();
-let lastQuestion = "";
-let aiBusy = false;
-let isListening = false;
-let listenTimer = null;
-
-const apiStatus = document.getElementById("apiStatus");
-const listenBtn = document.getElementById("listenBtn");
-const convo = document.getElementById("conversation");
-const voiceStatus = document.getElementById("voiceStatus");
-const keyInfo = document.getElementById("keyInfo");
-
-/* INIT */
-const backendKey = document.getElementById("apiKeyInput").value.trim();
-if (!GROQ_API_KEY && backendKey) {
-  GROQ_API_KEY = backendKey;
+/* INIT FROM SERVER */
+const backendKey=document.getElementById("apiKeyInput").value.trim();
+if(backendKey){
+  GROQ_API_KEY=backendKey;
+  setConnected();
 }
 
-if (GROQ_API_KEY) setConnected();
-
-const resumeFromServer = document.getElementById("resumeText").value.trim();
-if (resumeFromServer) {
-  resumeContext = resumeFromServer;
-  document.getElementById("resumeStatus").innerText = "Resume loaded ✔";
+const resumeFromServer=document.getElementById("resumeText").value.trim();
+if(resumeFromServer){
+  resumeContext=resumeFromServer;
+  document.getElementById("resumeStatus").innerText="Resume loaded ✔";
 }
 
 /* HELPERS */
 function addMsg(html){
-  const d = document.createElement("div");
-  d.className = "msg";
-  d.innerHTML = html;
+  const d=document.createElement("div");
+  d.className="msg";
+  d.innerHTML=html;
   convo.appendChild(d);
-  convo.scrollTop = convo.scrollHeight;
+  convo.scrollTop=convo.scrollHeight;
 }
 
 function clearConversation(){
-  convo.innerHTML = "<div class='msg'><b>System</b>Conversation cleared</div>";
-  lastQuestion = "";
+  convo.innerHTML="<div class='msg'><b>System</b>Conversation cleared</div>";
 }
 
 /* API KEY */
-function setConnected(){
-  apiStatus.innerText = "● Groq Connected";
-  apiStatus.className = "status connected";
-  listenBtn.disabled = false;
-  keyInfo.innerText = "Saved key: " + GROQ_API_KEY.slice(0,6) + "••••";
+async function saveApiKey(){
+  const key=document.getElementById("apiKeyInput").value.trim();
+  if(!key) return alert("Enter API key");
+  GROQ_API_KEY=key;
+  setConnected();
 }
 
-
-
 async function deleteApiKey(){
-  await fetch("/delete-groq-key", { method: "POST" });
-
-  GROQ_API_KEY = "";
-  apiStatus.innerText = "● Groq Not Connected";
-  apiStatus.className = "status disconnected";
-  listenBtn.disabled = true;
-  keyInfo.innerText = "No API key saved";
+  GROQ_API_KEY="";
+  apiStatus.innerText="● Groq Not Connected";
+  apiStatus.className="status disconnected";
+  listenBtn.disabled=true;
+  keyInfo.innerText="No API key saved";
 }
 
 /* RESUME */
 async function saveResume(){
-  const resume = document.getElementById("resumeText").value.trim();
-  if (!resume) return alert("Paste resume text");
-
-  await fetch("/save-resume", {
-    method: "POST",
-    body: new URLSearchParams({ resume })
-  });
-
-  resumeContext = resume;
-  document.getElementById("resumeStatus").innerText = "Resume analyzed ✔";
+  const resume=document.getElementById("resumeText").value.trim();
+  if(!resume) return alert("Paste resume text");
+  resumeContext=resume;
+  document.getElementById("resumeStatus").innerText="Resume analyzed ✔";
   addMsg("<b>System</b>Resume saved");
 }
 
-/* GROQ */
+/* GROQ (RESUME LOGIC PRESERVED) */
 async function askGroq(q){
-  if (aiBusy) return;
-  if (q === lastQuestion && q.length < 25) return;
+  if(aiBusy) return;
+  aiBusy=true;
 
-  aiBusy = true;
-  lastQuestion = q;
+  addMsg("<b>Question</b> "+q);
 
-  addMsg("<b>Question</b> " + q);
-
-  const thinking = document.createElement("div");
-  thinking.className = "msg";
-  thinking.innerHTML = "<b>AI</b> Thinking...";
+  const thinking=document.createElement("div");
+  thinking.className="msg";
+  thinking.innerHTML="<b>AI</b> Thinking...";
   convo.appendChild(thinking);
 
-  try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + GROQ_API_KEY,
-        "Content-Type": "application/json"
+  try{
+    const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+      method:"POST",
+      headers:{
+        "Authorization":"Bearer "+GROQ_API_KEY,
+        "Content-Type":"application/json"
       },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        messages: [
+      body:JSON.stringify({
+        model:"llama-3.1-8b-instant",
+        messages:[
           {
-            role: "system",
+            role:"system",
             content:
-              "You are a candidate in a LIVE technical interview. " +
-              "Answer ONLY programming, database, SQL Server, or software engineering questions.\n\n" +
-
-              "STRICT OUTPUT RULES (NO EXCEPTIONS):\n\n" +
-
-              "1) If the question is definition/theory (what is / explain / define):\n" +
-              "- Answer in ONLY 1–2 short interview sentences.\n" +
-              "- DO NOT include SQL, commands, or code.\n\n" +
-
-              "2) If the question explicitly asks for SQL/query/syntax/command:\n" +
-              "- Output ONLY the SQL command.\n" +
-              "- NO explanation, NO extra text.\n\n" +
-
-              "3) If the question explicitly asks for program/code/example:\n" +
-              "- Output ONLY the code.\n" +
-              "- NO explanation, NO comments.\n\n" +
-
-              "4) NEVER mix explanation and SQL/code.\n" +
-              "5) DO NOT add causes, types, advantages, or prevention unless explicitly asked.\n\n" +
-
-              "Use the resume ONLY to align tools and technologies.\n\n" +
-              "CANDIDATE RESUME:\n" +
-              (resumeContext || "No resume provided.")
+              "You are a candidate in a LIVE technical interview.\n\n"+
+              "STRICT OUTPUT RULES:\n"+
+              "1) Definitions → 1–2 sentences only\n"+
+              "2) SQL asked → SQL only\n"+
+              "3) Code asked → Code only\n\n"+
+              "Use resume ONLY to align tools.\n\n"+
+              "CANDIDATE RESUME:\n"+(resumeContext||"No resume provided.")
           },
-          {
-            role: "user",
-            content: q
-          }
+          { role:"user", content:q }
         ]
       })
     });
 
-    const data = await res.json();
-    thinking.innerHTML = "<b>AI Answer</b> " + data.choices[0].message.content;
+    const data=await res.json();
+    thinking.innerHTML="<b>AI Answer</b> "+(data.choices?.[0]?.message?.content||"No response");
 
-  } catch (err) {
-    thinking.remove();
-    console.error("Groq error:", err);
-  } finally {
-    aiBusy = false;
+  }catch(e){
+    thinking.innerHTML="<b>Error</b> Request failed";
+  }finally{
+    aiBusy=false;
   }
 }
 
-async function saveApiKey(){
-  const key = document.getElementById("apiKeyInput").value.trim();
-  if(!key.startsWith("gsk_")) return alert("Invalid API key");
-
-  await fetch("/save-groq-key", {
-    method: "POST",
-    body: new URLSearchParams({ key })
-  });
-
-  GROQ_API_KEY = key;
-  setConnected();
-}
-
-
-
-
-/* MIC */
+/* MIC (AUTO-RESTART FIXED) */
 function startListening(){
-  if (!GROQ_API_KEY) {
-    alert("Save Groq API key first");
-    return;
-  }
-  if (!('webkitSpeechRecognition' in window)) {
-    alert("Use Chrome or Edge");
-    return;
-  }
-  if (isListening) return;
+  if(!GROQ_API_KEY) return alert("Save Groq API key first");
+  if(!('webkitSpeechRecognition'in window)) return alert("Use Chrome or Edge");
+  if(isListening) return;
 
-  recognition = new webkitSpeechRecognition();
-  recognition.continuous = true;
-  recognition.lang = "en-US";
+  isListening=true;
+  voiceStatus.innerText="Listening...";
 
-  isListening = true;
-  voiceStatus.innerText = "Listening...";
+  recognition=new webkitSpeechRecognition();
+  recognition.continuous=true;
+  recognition.interimResults=false;
+  recognition.lang="en-US";
 
-  recognition.onresult = e => {
-    const text = e.results[e.results.length - 1][0].transcript.trim();
+  recognition.onresult=e=>{
+    const text=e.results[e.results.length-1][0].transcript.trim();
     clearTimeout(listenTimer);
-    listenTimer = setTimeout(() => {
-      if (text.length > 4) askGroq(text);
-    }, 1200);
+    listenTimer=setTimeout(()=>{
+      if(text.length>4) askGroq(text);
+    },800);
   };
 
-  recognition.onend = () => {
-    if (isListening) recognition.start();
+  recognition.onend=()=>{
+    if(isListening){
+      setTimeout(()=>recognition.start(),500);
+    }
   };
 
   recognition.start();
 }
 
 function stopListening(){
-  isListening = false;
-  if (recognition) {
+  isListening=false;
+  if(recognition){
+    recognition.onend=null;
     recognition.stop();
-    recognition = null;
+    recognition=null;
   }
-  voiceStatus.innerText = "Stopped";
+  voiceStatus.innerText="Stopped";
 }
 
 /* SCREEN */
 async function startScreen(){
-  screenStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+  screenStream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    }
+  });
+
   document.getElementById("screenVideo").srcObject = screenStream;
 }
 
-function stopScreen(){
-  if (screenStream) {
-    screenStream.getTracks().forEach(t => t.stop());
-    document.getElementById("screenVideo").srcObject = null;
-  }
-}
+
 
 /* DIRECT */
 function askDirect(){
-  const q = document.getElementById("manualQuestion").value.trim();
-  if (!q) return;
-  document.getElementById("manualQuestion").value = "";
+  const q=document.getElementById("manualQuestion").value.trim();
+  if(!q) return;
+  document.getElementById("manualQuestion").value="";
   askGroq(q);
 }
 </script>
-
 
 </body>
 </html>
