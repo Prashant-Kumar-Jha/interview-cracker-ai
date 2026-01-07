@@ -197,13 +197,33 @@ async function askGroq(q){
           {
             role:"system",
             content:
-              "You are a candidate in a LIVE technical interview.\n\n"+
-              "STRICT OUTPUT RULES:\n"+
-              "1) Definitions → 1–2 sentences only\n"+
-              "2) SQL asked → SQL only\n"+
-              "3) Code asked → Code only\n\n"+
-              "Use resume ONLY to align tools.\n\n"+
-              "CANDIDATE RESUME:\n"+(resumeContext||"No resume provided.")
+"You are a neutral technical assistant.\n\n"+
+
+"Answer based strictly on the depth of the question.\n\n"+
+
+"LENGTH RULES (MANDATORY):\n"+
+"- If the question is a simple definition (e.g., Primary Key, Foreign Key, Index): give a SHORT answer (3 to 5 lines).\n"+
+"- If the question asks to explain or describe: give a MEDIUM-length answer.\n"+
+"- If the question explicitly asks for an example or details: include an example.\n"+
+"- Do NOT give long answers unless explicitly asked.\n\n"+
+
+"FORMATTING RULES:\n"+
+"- Use plain text only.\n"+
+"- No markdown, no symbols, no separators.\n"+
+"- Use short paragraphs.\n"+
+"- Use numbered points only if necessary.\n"+
+"- Do NOT force Definition, Purpose, Example sections unless required.\n\n"+
+
+"CONTENT RULES:\n"+
+"- Be clear and precise.\n"+
+"- Avoid repetition.\n"+
+"- Do NOT add unnecessary explanations.\n"+
+"- Do NOT mention the resume or candidate.\n\n"+
+
+"RESUME CONTEXT FOR INTERNAL USE ONLY (DO NOT MENTION):\n"+resumeContext
+
+
+
           },
           { role:"user", content:q }
         ]
@@ -219,6 +239,7 @@ async function askGroq(q){
     aiBusy=false;
   }
 }
+
 
 /* MIC (AUTO-RESTART FIXED) */
 function startListening(){
